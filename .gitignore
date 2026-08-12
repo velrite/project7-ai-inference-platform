@@ -1,0 +1,26 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+
+# Secrets / keys
+*.pem
+*.key
+*-key.json
+service-account*.json
+.env
+.env.*
+
+# OS/editor junk
+.DS_Store
+*.swp
+.vscode/
+
+# Evidence raw data (keep curated PNGs, ignore large raw dumps)
+evidence/raw/
