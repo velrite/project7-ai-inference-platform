@@ -1,0 +1,25 @@
+# Pod WITH the correct Workload Identity binding - should
+# successfully read the secret with no JSON key file.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: with-identity
+spec:
+  serviceAccountName: vllm-app-ksa
+  containers:
+    - name: gcloud
+      image: google/cloud-sdk:slim
+      command: ["sleep", "3600"]
+---
+# Pod WITHOUT the binding - uses the default KSA, should be
+# DENIED when trying to read the same secret. This proves the
+# negative, same discipline as the NetworkPolicy test.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: without-identity
+spec:
+  containers:
+    - name: gcloud
+      image: google/cloud-sdk:slim
+      command: ["sleep", "3600"]
