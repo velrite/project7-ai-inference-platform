@@ -23,6 +23,17 @@ resource "google_container_cluster" "primary" {
 
   deletion_protection = false # demo project - we WILL tear this down
 
+  addons_config {
+    network_policy_config {
+      disabled = false
+    }
+  }
+
+  network_policy {
+    enabled  = true
+    provider = "CALICO"
+  }
+
   depends_on = [google_project_service.required]
 }
 
@@ -50,3 +61,8 @@ resource "google_container_node_pool" "system" {
     max_node_count = 2
   }
 }
+
+# NOTE: network_policy must be enabled for GKE to actually ENFORCE
+# NetworkPolicy objects. Without this, Kubernetes accepts the policy
+# YAML with no error, but silently does nothing - which is exactly
+# what we just proved by testing it live.
