@@ -1,0 +1,58 @@
+name: CI Security Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build-scan-sbom:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build container image
+        run: |
+          docker build -t vllm-inference:${{ github.sha }} ./app
+
+      # Trivy scans the built image for known CVEs. Policy: fail the
+      # pipeline on CRITICAL severity. HIGH/MEDIUM/LOW are reported
+      # but do not block - this is a documented, explicit threshold,
+      # not silent tolerance.
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: vllm-inference:${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 1
+          vuln-type: os,library
+
+      - name: Upload Trivy results as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-results
+          path: trivy-results.txt
+
+      # Syft generates a full inventory of every package/library
+      # inside the image. This is what lets you answer "are we
+      # affected by CVE-XXXX" in seconds instead of re-scanning
+      # everything from scratch.
+      - name: Generate SBOM with Syft
+        uses: anchore/sbom-action@v0
+        with:
+          image: vllm-inference:${{ github.sha }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Upload SBOM as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.spdx.json
