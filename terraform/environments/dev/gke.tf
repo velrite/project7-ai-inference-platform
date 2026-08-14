@@ -47,7 +47,7 @@ resource "google_container_node_pool" "system" {
   node_count = 1
 
   node_config {
-    machine_type    = "e2-medium"
+    machine_type    = "e2-standard-2"
     disk_size_gb    = 30
     service_account = google_service_account.gke_nodes.email
     oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
