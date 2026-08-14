@@ -15,12 +15,12 @@ resource "google_container_node_pool" "gpu" {
   }
 
   node_config {
-    machine_type    = "g2-standard-4"
+    machine_type    = "n1-standard-4"
     service_account = google_service_account.gke_nodes.email
     oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
 
     guest_accelerator {
-      type  = "nvidia-l4"
+      type  = "nvidia-tesla-v100"
       count = 1
     }
 
