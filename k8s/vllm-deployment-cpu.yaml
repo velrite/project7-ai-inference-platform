@@ -14,8 +14,8 @@ spec:
       labels:
         app: vllm-inference-cpu
     spec:
-      nodeSelector:
-        pool: system
+      tolerations:
+        - operator: "Exists"
       containers:
         - name: vllm
           image: vllm/vllm-openai:latest
@@ -28,16 +28,16 @@ spec:
             - containerPort: 8000
           resources:
             requests:
-              cpu: "1500m"
-              memory: "3Gi"
+              cpu: "500m"
+              memory: "1500Mi"
             limits:
-              cpu: "2000m"
-              memory: "4Gi"
+              cpu: "1000m"
+              memory: "2Gi"
           startupProbe:
             httpGet:
               path: /health
               port: 8000
-            failureThreshold: 60
+            failureThreshold: 90
             periodSeconds: 10
           readinessProbe:
             httpGet:
