@@ -14,7 +14,7 @@ spec:
                 - Pod
       verifyImages:
         - imageReferences:
-            - "vllm-inference*"
+            - "us-central1-docker.pkg.dev/velrite-tf-test/project7-inference/*"
           attestors:
             - entries:
                 - keys:
