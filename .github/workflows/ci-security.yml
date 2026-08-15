@@ -6,24 +6,43 @@ on:
   pull_request:
     branches: [main, master]
 
+env:
+  REGISTRY: us-central1-docker.pkg.dev
+  IMAGE_NAME: velrite-tf-test/project7-inference/vllm-inference
+
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   build-scan-sbom-sign:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Authenticate to GCP via Workload Identity Federation
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/362285522705/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider'
+          service_account: 'project7-ci-pipeline@velrite-tf-test.iam.gserviceaccount.com'
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGISTRY }} --quiet
+
       - name: Build container image
         run: |
-          docker build -t vllm-inference:${{ github.sha }} ./app
+          docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} ./app
+
+      - name: Push image to Artifact Registry
+        run: |
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
       - name: Run Trivy vulnerability scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: vllm-inference:${{ github.sha }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           format: table
           severity: CRITICAL
           timeout: '15m0s'
@@ -33,7 +52,7 @@ jobs:
       - name: Generate SBOM with Syft
         uses: anchore/sbom-action@v0
         with:
-          image: vllm-inference:${{ github.sha }}
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           format: spdx-json
           output-file: sbom.spdx.json
 
@@ -51,5 +70,5 @@ jobs:
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |
           echo "${{ secrets.COSIGN_PRIVATE_KEY }}" > cosign.key
-          cosign sign --key cosign.key --yes vllm-inference:${{ github.sha }}
+          cosign sign --key cosign.key --yes ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           rm -f cosign.key
