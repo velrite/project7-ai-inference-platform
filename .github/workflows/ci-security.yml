@@ -30,6 +30,7 @@ jobs:
           image-ref: vllm-inference:${{ github.sha }}
           format: table
           severity: CRITICAL
+          timeout: "15m0s"
           exit-code: 1
           vuln-type: os,library
 
