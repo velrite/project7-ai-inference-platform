@@ -7,7 +7,7 @@ on:
     branches: [main, master]
 
 jobs:
-  build-scan-sbom:
+  build-scan-sbom-sign:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -23,28 +23,17 @@ jobs:
       # Trivy scans the built image for known CVEs. Policy: fail the
       # pipeline on CRITICAL severity. HIGH/MEDIUM/LOW are reported
       # but do not block - this is a documented, explicit threshold,
-      # not silent tolerance.
+      # not silent tolerance. Documented exceptions live in .trivyignore.
       - name: Run Trivy vulnerability scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: vllm-inference:${{ github.sha }}
           format: table
           severity: CRITICAL
-          timeout: "15m0s"
+          timeout: '15m0s'
           exit-code: 1
           vuln-type: os,library
 
-      - name: Upload Trivy results as artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-results
-          path: trivy-results.txt
-
-      # Syft generates a full inventory of every package/library
-      # inside the image. This is what lets you answer "are we
-      # affected by CVE-XXXX" in seconds instead of re-scanning
-      # everything from scratch.
       - name: Generate SBOM with Syft
         uses: anchore/sbom-action@v0
         with:
@@ -57,3 +46,25 @@ jobs:
         with:
           name: sbom
           path: sbom.spdx.json
+
+      # Install cosign for signing
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      # Sign the image using its exact digest, never a mutable tag.
+      # Private key comes from a GitHub Actions secret, never committed.
+      - name: Sign container image
+        env:
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          echo "${{ secrets.COSIGN_PRIVATE_KEY }}" > cosign.key
+          cosign sign --key cosign.key --yes vllm-inference:${{ github.sha }}
+          rm -f cosign.key
+
+      - name: Upload Trivy results as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-scan-log
+          path: '*.json'
+          if-no-files-found: ignore

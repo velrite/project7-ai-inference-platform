@@ -1,0 +1,22 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-signed-images
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: check-image-signature
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      verifyImages:
+        - imageReferences:
+            - "vllm-inference*"
+          attestors:
+            - entries:
+                - keys:
+                    publicKeys: |-
+$(cat .cosign/cosign.pub | sed 's/^/                      /')
