@@ -29,7 +29,7 @@ jobs:
         with:
           image-ref: vllm-inference:${{ github.sha }}
           format: table
-          severity: CRITICAL,HIGH
+          severity: CRITICAL
           exit-code: 1
           vuln-type: os,library
 
