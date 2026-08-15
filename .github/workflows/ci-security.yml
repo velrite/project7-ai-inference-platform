@@ -25,7 +25,7 @@ jobs:
       # but do not block - this is a documented, explicit threshold,
       # not silent tolerance.
       - name: Run Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: vllm-inference:${{ github.sha }}
           format: table
