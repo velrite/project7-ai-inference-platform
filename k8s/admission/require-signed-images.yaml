@@ -19,4 +19,7 @@ spec:
             - entries:
                 - keys:
                     publicKeys: |-
-$(cat .cosign/cosign.pub | sed 's/^/                      /')
+                      -----BEGIN PUBLIC KEY-----
+                      MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEOCbfjVwzPuh5fR4ScJhxn8FixoWV
+                      //iwfnSwlqhBhiPWTvCVIP22EwUyTrWO45JBE3WuU0HMHL+l6HkavIp7iQ==
+                      -----END PUBLIC KEY-----

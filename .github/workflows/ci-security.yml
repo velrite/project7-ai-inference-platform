@@ -20,10 +20,6 @@ jobs:
         run: |
           docker build -t vllm-inference:${{ github.sha }} ./app
 
-      # Trivy scans the built image for known CVEs. Policy: fail the
-      # pipeline on CRITICAL severity. HIGH/MEDIUM/LOW are reported
-      # but do not block - this is a documented, explicit threshold,
-      # not silent tolerance. Documented exceptions live in .trivyignore.
       - name: Run Trivy vulnerability scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -47,12 +43,9 @@ jobs:
           name: sbom
           path: sbom.spdx.json
 
-      # Install cosign for signing
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3
 
-      # Sign the image using its exact digest, never a mutable tag.
-      # Private key comes from a GitHub Actions secret, never committed.
       - name: Sign container image
         env:
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
@@ -60,11 +53,3 @@ jobs:
           echo "${{ secrets.COSIGN_PRIVATE_KEY }}" > cosign.key
           cosign sign --key cosign.key --yes vllm-inference:${{ github.sha }}
           rm -f cosign.key
-
-      - name: Upload Trivy results as artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-scan-log
-          path: '*.json'
-          if-no-files-found: ignore

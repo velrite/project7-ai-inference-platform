@@ -24,3 +24,4 @@ service-account*.json
 
 # Evidence raw data (keep curated PNGs, ignore large raw dumps)
 evidence/raw/
+cosign.key
