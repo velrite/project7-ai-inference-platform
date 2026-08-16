@@ -1,5 +1,29 @@
 # Project 7 - Production AI Inference Platform
 
+## Current status, stated upfront
+The full production platform around AI inference is built, secured,
+and proven: signed CI/CD pipeline, admission-enforced supply chain,
+network segmentation, GitOps deployment, all tested live with real
+positive and negative evidence - not just configuration files that
+were never exercised.
+
+The one thing not yet proven live is the inference workload itself.
+GPU node provisioning is blocked by a Google Cloud project-level quota
+(GPUS_ALL_REGIONS, confirmed at 0.0 across every GPU type, every
+region, and even a freshly created project under the same billing
+account). This was diagnosed down to the exact quota name and error
+text through direct Managed Instance Group log inspection, and has
+been escalated to Google Cloud Support. Full diagnostic trail in
+docs/02-architecture/architecture-decisions.md, ADR-006.
+
+Everything downstream of a live GPU pod - inference responses,
+latency measurement, autoscaling under real load, and load testing to
+saturation - is explicitly marked as blocked rather than estimated,
+faked, or omitted. The infrastructure is fully ready: the exact
+command that deploys the inference workload the moment quota clears
+is documented in docs/04-delivery/ci-cd.md and requires no further
+engineering work.
+
 ## Overview
 A GKE-based platform engineered to serve an open-source LLM securely,
 observably, and reproducibly. This project does not train or fine-tune
@@ -17,8 +41,8 @@ problem. See docs/01-overview/problem-statement.md for the full case.
 ## Architecture
 Full architecture, trust boundaries, and a Mermaid diagram are in
 docs/02-architecture/architecture.md. Six Architecture Decision Records,
-including a full account of the project's central open issue, are in
-docs/02-architecture/architecture-decisions.md.
+including a full account of the GPU quota blocker with direct
+evidence, are in docs/02-architecture/architecture-decisions.md.
 
 ## Key engineering decisions
 GKE Standard, zonal, chosen over Autopilot or a regional cluster for
