@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-inference-cpu
+  labels:
+    app: vllm-inference-cpu
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-inference-cpu
+  template:
+    metadata:
+      labels:
+        app: vllm-inference-cpu
+    spec:
+      nodeSelector:
+        pool: cpu-inference
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          args:
+            - "--model=Qwen/Qwen2.5-1.5B-Instruct"
+            - "--dtype=float32"
+            - "--max-model-len=4096"
+            - "--device=cpu"
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: "2500m"
+              memory: "8Gi"
+            limits:
+              cpu: "3500m"
+              memory: "12Gi"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            failureThreshold: 90
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 15
