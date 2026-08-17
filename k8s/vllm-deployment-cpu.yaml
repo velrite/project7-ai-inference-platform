@@ -16,16 +16,29 @@ spec:
     spec:
       nodeSelector:
         pool: cpu-inference
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
       containers:
         - name: vllm
-          image: vllm/vllm-openai:latest
+          image: public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:latest
+          env:
+            - name: VLLM_CPU_KVCACHE_SPACE
+              value: "4"
+            - name: VLLM_ENABLE_V1_MULTIPROCESSING
+              value: "0"
           args:
             - "--model=Qwen/Qwen2.5-1.5B-Instruct"
-            - "--dtype=float32"
+            - "--dtype=bfloat16"
             - "--max-model-len=4096"
-            - "--device=cpu"
+            - "--enforce-eager"
           ports:
             - containerPort: 8000
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
           resources:
             requests:
               cpu: "2500m"
