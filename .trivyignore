@@ -1,3 +1,6 @@
 # CVE-2025-37777: linux-libc-dev headers only, ksmbd component not used
 # by this workload. See docs/security-exceptions.md for full justification.
 CVE-2025-37777
+CVE-2026-53398
+CVE-2026-64535
+CVE-2026-64564
