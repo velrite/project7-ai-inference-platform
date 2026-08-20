@@ -1,0 +1,12 @@
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: vllm-inference-metrics
+spec:
+  selector:
+    matchLabels:
+      app: vllm-inference-cpu
+  endpoints:
+    - port: 8000
+      interval: 30s
+      path: /metrics
