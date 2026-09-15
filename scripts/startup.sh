@@ -94,3 +94,49 @@ else
   echo "FAIL: /v1/models did not respond. Check: kubectl logs -l app=vllm"
 fi
 kill $PF_PID 2>/dev/null || true
+
+echo "### 10. OpenCost + Prometheus (real per-workload cost data) ###"
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update >/dev/null
+helm repo add opencost https://opencost.github.io/opencost-helm-chart --force-update >/dev/null
+helm repo update >/dev/null
+
+kubectl create namespace prometheus-system --dry-run=client -o yaml | kubectl apply -f -
+if ! helm status prometheus -n prometheus-system >/dev/null 2>&1; then
+  helm install prometheus prometheus-community/prometheus \
+    --namespace prometheus-system \
+    --set server.persistentVolume.enabled=false \
+    --set alertmanager.enabled=false
+fi
+
+kubectl create namespace opencost --dry-run=client -o yaml | kubectl apply -f -
+if ! helm status opencost -n opencost >/dev/null 2>&1; then
+  helm install opencost opencost/opencost --namespace opencost
+fi
+
+# Ensure Cloud Billing API is enabled (idempotent)
+gcloud services enable cloudbilling.googleapis.com --project="$PROJECT_ID"
+
+# Ensure a Cloud Billing API key exists, reuse if already created
+KEY_NAME=$(gcloud services api-keys list --project="$PROJECT_ID" --filter="displayName=opencost-billing-key" --format="value(name)")
+if [ -z "$KEY_NAME" ]; then
+  gcloud services api-keys create --display-name="opencost-billing-key" --project="$PROJECT_ID"
+  KEY_NAME=$(gcloud services api-keys list --project="$PROJECT_ID" --filter="displayName=opencost-billing-key" --format="value(name)")
+  gcloud services api-keys update "$KEY_NAME" --project="$PROJECT_ID" --api-target=service=cloudbilling.googleapis.com
+fi
+API_KEY=$(gcloud services api-keys get-key-string "$KEY_NAME" --project="$PROJECT_ID" --format="value(keyString)")
+
+kubectl create secret generic opencost-gcp-key -n opencost \
+  --from-literal=CLOUD_PROVIDER_API_KEY="$API_KEY" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+helm upgrade opencost opencost/opencost \
+  --namespace opencost \
+  --reuse-values \
+  --set-json 'extraVolumes=[{"name":"configs","emptyDir":{}}]' \
+  --set-json 'opencost.exporter.extraVolumeMounts=[{"name":"configs","mountPath":"/var/configs"}]' \
+  --set-json 'opencost.exporter.extraEnvFrom=[{"secretRef":{"name":"opencost-gcp-key"}}]'
+
+kubectl rollout status deployment opencost -n opencost --timeout=120s
+echo "OpenCost ready. Pull data with:"
+echo "  kubectl port-forward -n opencost svc/opencost 9003:9003"
+echo "  curl \"localhost:9003/allocation/compute?window=7d&aggregate=namespace\""
