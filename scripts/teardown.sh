@@ -8,7 +8,17 @@ echo "### 1. Confirm what's running before planning a destroy ###"
 kubectl get pods -A
 gcloud container clusters list --project="$PROJECT_ID"
 
-echo "### 2. Generate destroy plan (PLAN ONLY) ###"
+echo "### 2. Disable ArgoCD auto-sync FIRST — otherwise it may fight the teardown ###"
+kubectl patch application project7-inference -n argocd --type merge \
+  -p '{"spec":{"syncPolicy":null}}' 2>/dev/null || echo "ArgoCD not present or already down — continuing."
+
+echo "### 3. Remove Kyverno's admission webhooks BEFORE destroying the cluster ###"
+echo "!! Without this, Kyverno's ValidatingWebhookConfiguration can block deletion"
+echo "!! of resources during teardown if the webhook becomes unreachable mid-destroy."
+kubectl delete validatingwebhookconfiguration kyverno-resource-validating-webhook-cfg --ignore-not-found=true 2>/dev/null || true
+kubectl delete validatingwebhookconfiguration kyverno-policy-validating-webhook-cfg --ignore-not-found=true 2>/dev/null || true
+
+echo "### 4. Generate destroy plan (PLAN ONLY) ###"
 cd "$TF_DIR"
 terraform plan -destroy -out=/tmp/project7-destroy.tfplan | tee /tmp/project7-destroy-plan.txt
 

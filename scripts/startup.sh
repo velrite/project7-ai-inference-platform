@@ -57,30 +57,83 @@ echo "### 4. Get credentials + verify context ###"
 gcloud container clusters get-credentials "$CLUSTER" --zone "$ZONE" --project "$PROJECT_ID"
 check_context
 
-echo "### 5. Re-verify context immediately before kubectl apply ###"
+echo "### 5. Re-verify context immediately before touching the cluster ###"
 check_context
 cd "$REPO_DIR"
-kubectl apply -f k8s/workload-identity/ksa.yaml
-kubectl apply -f k8s/network-policies/default-deny.yaml
-kubectl apply -f k8s/network-policies/allow-granted-only.yaml
 
-echo "### 6. CHECKPOINT: signed-image policy ###"
-echo "require-signed-images.yaml scope not yet reviewed. vLLM image is unsigned."
-read -p "Apply signed-image policy now, before vLLM? [y/N] " POLICY_FIRST
-if [ "$POLICY_FIRST" = "y" ] || [ "$POLICY_FIRST" = "Y" ]; then
-  kubectl apply -f k8s/admission/require-signed-images.yaml
+echo "### 6. Kyverno — install if missing, idempotent ###"
+helm repo add kyverno https://kyverno.github.io/kyverno/ --force-update >/dev/null
+helm repo update >/dev/null
+kubectl create namespace kyverno --dry-run=client -o yaml | kubectl apply -f -
+if ! helm status kyverno -n kyverno >/dev/null 2>&1; then
+  helm install kyverno kyverno/kyverno --namespace kyverno
+  kubectl rollout status deployment kyverno-admission-controller -n kyverno --timeout=180s
 fi
 
-echo "### 7. Deploy vLLM ###"
-kubectl apply -f k8s/vllm-deployment-cpu.yaml
-kubectl apply -f k8s/vllm-service-cpu.yaml
-kubectl apply -f k8s/ingress/vllm-cpu-ingress.yaml
-kubectl apply -f k8s/observability/vllm-podmonitoring.yaml
+echo "### 7. Kyverno Workload Identity annotation — idempotent, safe to re-run ###"
+kubectl annotate serviceaccount kyverno-admission-controller -n kyverno \
+  iam.gke.io/gcp-service-account=project7-gke-nodes@${PROJECT_ID}.iam.gserviceaccount.com \
+  --overwrite
 
-echo "### 8. Wait for Ready (model load takes several minutes on CPU) ###"
-kubectl wait --for=condition=Ready pod -l app=vllm --timeout=600s
+echo "### 8. ArgoCD — install if missing, idempotent ###"
+kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+if ! kubectl get deployment argocd-server -n argocd >/dev/null 2>&1; then
+  kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --server-side --force-conflicts
+  kubectl rollout status deployment argocd-server -n argocd --timeout=180s
+  kubectl rollout status deployment argocd-repo-server -n argocd --timeout=180s
+fi
 
-echo "### 9. Real health check ###"
+echo "### 9. Ensure the Application exists (idempotent) ###"
+cat <<'APPEOF' | kubectl apply -f -
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: project7-inference
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/velrite/project7-ai-inference-platform.git
+    targetRevision: master
+    path: k8s
+    directory:
+      exclude: vllm-deployment.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: false
+APPEOF
+
+echo "### 10. Everything else deploys via GitOps now, not kubectl apply. Wait for sync. ###"
+STATUS=""
+HEALTH=""
+for i in $(seq 1 30); do
+  STATUS=$(kubectl get application project7-inference -n argocd -o jsonpath='{.status.sync.status}')
+  HEALTH=$(kubectl get application project7-inference -n argocd -o jsonpath='{.status.health.status}')
+  echo "  sync=$STATUS health=$HEALTH"
+  if [ "$STATUS" = "Synced" ] && [ "$HEALTH" = "Healthy" ]; then
+    break
+  fi
+  sleep 10
+done
+if [ "$STATUS" != "Synced" ] || [ "$HEALTH" != "Healthy" ]; then
+  echo "WARNING: ArgoCD did not reach Synced/Healthy within 5 minutes. Check manually:"
+  echo "  kubectl describe application project7-inference -n argocd"
+fi
+
+echo "### 11. Confirm the vLLM pod's real label before trusting the wait below ###"
+kubectl get pods --show-labels | grep -i vllm || true
+echo "^^^ CHECK: confirm the actual 'app=' label above matches what step 12 waits on."
+echo "    If it differs, edit the -l selector in this script before relying on it unattended."
+
+echo "### 12. Wait for Ready (model load takes several minutes on CPU) ###"
+kubectl wait --for=condition=Ready pod -l app=vllm-inference-cpu --timeout=600s || \
+  echo "WARNING: wait timed out or label mismatch — verify manually: kubectl get pods -o wide"
+
+echo "### 13. Real health check ###"
 kubectl port-forward svc/vllm-inference-cpu-svc 8000:8000 > /tmp/pf.log 2>&1 &
 PF_PID=$!
 sleep 5
@@ -89,13 +142,13 @@ if curl -sf localhost:8000/v1/models > /dev/null; then
   curl -s localhost:8000/v1/completions -H "Content-Type: application/json" \
     -d '{"model":"Qwen/Qwen2.5-1.5B-Instruct","prompt":"Say hello in one word.","max_tokens":5}'
   echo ""
-  echo "DONE. vLLM is live and serving."
+  echo "DONE. vLLM is live and serving via GitOps-managed deployment."
 else
-  echo "FAIL: /v1/models did not respond. Check: kubectl logs -l app=vllm"
+  echo "FAIL: /v1/models did not respond. Check: kubectl logs -l app=vllm-inference-cpu"
 fi
 kill $PF_PID 2>/dev/null || true
 
-echo "### 10. OpenCost + Prometheus (real per-workload cost data) ###"
+echo "### 14. OpenCost + Prometheus (real per-workload cost data) ###"
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update >/dev/null
 helm repo add opencost https://opencost.github.io/opencost-helm-chart --force-update >/dev/null
 helm repo update >/dev/null
@@ -113,10 +166,8 @@ if ! helm status opencost -n opencost >/dev/null 2>&1; then
   helm install opencost opencost/opencost --namespace opencost
 fi
 
-# Ensure Cloud Billing API is enabled (idempotent)
 gcloud services enable cloudbilling.googleapis.com --project="$PROJECT_ID"
 
-# Ensure a Cloud Billing API key exists, reuse if already created
 KEY_NAME=$(gcloud services api-keys list --project="$PROJECT_ID" --filter="displayName=opencost-billing-key" --format="value(name)")
 if [ -z "$KEY_NAME" ]; then
   gcloud services api-keys create --display-name="opencost-billing-key" --project="$PROJECT_ID"
@@ -140,3 +191,8 @@ kubectl rollout status deployment opencost -n opencost --timeout=120s
 echo "OpenCost ready. Pull data with:"
 echo "  kubectl port-forward -n opencost svc/opencost 9003:9003"
 echo "  curl \"localhost:9003/allocation/compute?window=7d&aggregate=namespace\""
+
+echo ""
+echo "=== STARTUP COMPLETE ==="
+echo "GitOps: kubectl get application project7-inference -n argocd"
+echo "Signature enforcement: kubectl get clusterpolicy require-signed-images"
