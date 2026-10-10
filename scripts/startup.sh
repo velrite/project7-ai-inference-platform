@@ -97,7 +97,7 @@ spec:
     targetRevision: master
     path: k8s
     directory:
-      exclude: vllm-deployment.yaml
+      exclude: '{vllm-deployment.yaml,vllm-service.yaml}'
   destination:
     server: https://kubernetes.default.svc
     namespace: default
@@ -106,6 +106,15 @@ spec:
       prune: false
       selfHeal: false
 APPEOF
+
+echo "### 9b. Apply what Argo CD does not manage ###"
+echo "Argo CD syncs only the top level of k8s/ (no directory.recurse). Subfolders are applied here."
+kubectl apply -f k8s/workload-identity/ksa.yaml
+kubectl apply -f k8s/network-policies/default-deny.yaml
+kubectl apply -f k8s/network-policies/allow-granted-only.yaml
+kubectl apply -f k8s/admission/require-signed-images.yaml
+kubectl apply -f k8s/ingress/vllm-cpu-ingress.yaml
+kubectl apply -f k8s/observability/vllm-podmonitoring.yaml
 
 echo "### 10. Everything else deploys via GitOps now, not kubectl apply. Wait for sync. ###"
 STATUS=""
